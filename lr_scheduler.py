@@ -146,4 +146,4 @@ class CyclicLR(_LRScheduler):
             new_lr.append(lr)
         if self.verbose:
             print(new_lr)
-	    return new_lr
+        return new_lr

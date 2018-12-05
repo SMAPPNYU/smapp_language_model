@@ -90,13 +90,14 @@ def save_state_dict(model, filepath):
     torch.save(model_dict, filepath)
     return model_dict
     
-def run_epoch(model, dataset, criterion, optim, batch_size, device,
+def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
               train=False, shuffle=True):
     '''A wrapper for a training, validation or test run.'''
     model.train() if train else model.eval()
     loss = AverageMeter()
     accuracy = AverageMeter()
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    #i = 0
     for X, y in loader:
         model.zero_grad() 
         X = X.squeeze().to(device)
@@ -120,7 +121,10 @@ def run_epoch(model, dataset, criterion, optim, batch_size, device,
         if train:
             lossy.backward()
             optim.step()
-    
+            #i+=1
+            scheduler.step()
+            #print(i)
+
     return loss.avg, accuracy.avg
 
 
@@ -144,7 +148,7 @@ def sample_lm(model):
 
 
 def training_loop(batch_size, num_epochs, display_freq, model, criterion, 
-                  optim, device, training_set, validation_set=None, 
+                  optim, scheduler, device, training_set, validation_set=None, 
                   best_model_path='model', history=None):
     '''Training iteration.'''
     if not history:
@@ -153,14 +157,11 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
     try: 
         for epoch in tqdm(range(num_epochs)):
             # scheduler goes here...
-            loss, accuracy = training_epoch(model, training_set, criterion, optim, batch_size, 
-                                            device=device)
+            loss, accuracy = training_epoch(model = model, dataset = training_set, criterion = criterion, optim = optim, scheduler = scheduler, batch_size = batch_size, device=device)
             history.update_loss(loss)
             
             if validation_set:
-                val_loss, val_accuracy = validation_epoch(model, validation_set, 
-                                                          criterion, optim, batch_size,
-                                                          device=device)  
+                val_loss, val_accuracy = validation_epoch(model = model, dataset = validation_set, criterion = criterion, optim = optim, scheduler = scheduler, batch_size = batch_size, device=device)  
                 history.update_val_loss(val_loss)
                 if val_loss < history.min_loss:
                     save_state_dict(model, best_model_path)
@@ -198,14 +199,12 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
 
         return history
     
-def test_loop(batch_size, model, criterion, optim, test_set, device):
+def test_loop(batch_size, model, criterion, optim, scheduler, test_set, device):
     '''Data iterator for the test set'''
     model.eval()
     
     try:
-        test_loss, test_accuracy = validation_epoch(model, test_set, 
-                                                    criterion, optim, batch_size, 
-                                                    device=device)
+        test_loss, test_accuracy = validation_epoch(model = model, dataset = test_set, criterion = criterion, optim = optim, scheduler = scheduler, batch_size = batch_size, device=device)
         log('Evaluation Complete')
         log('Test set Loss: {}'.format(test_loss))
         log('Test set Perplexity: {}'.format(np.exp(test_loss)))
