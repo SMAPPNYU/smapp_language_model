@@ -139,10 +139,10 @@ def validation_epoch(*args, **kwargs):
     return run_epoch(*args, **kwargs)
  
     
-def sample_lm(model):
+def sample_lm(model, length):
     '''Samples a language model and returns generated words'''
     start_idx = model.word2idx['<START>']
-    indices = model.sample(start_idx)
+    indices = model.sample(start_idx, length)
     words = [model.idx2word[index] for index in indices]
     
     return words
@@ -189,9 +189,9 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
                             epoch, loss, np.exp(loss)))
                 
                 # sample from the language model
-                #words = sample_lm(model)
-                #log("Sample: {}".format(' '.join(words)))
-                #time.sleep(1)
+                words = sample_lm(model, 70)
+                log("Sample: {}".format(' '.join(words)))
+                time.sleep(1)
         
         log('-' * 89)
         log("Training complete")

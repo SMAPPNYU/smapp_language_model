@@ -74,13 +74,13 @@ class RNNLM(nn.Module):
                 layer.bias.data.fill_(0)
     
     
-    def sample(self, x_start):
+    def sample(self, x_start, length):
         '''
         Generates a sequence of text given a starting word ix and hidden state.
         '''
         with torch.no_grad():
             indices = [x_start]
-            for i in range(self.seq_len):
+            for i in range(length):
                 # create inputs
                 x_input = torch.LongTensor(indices).to(self.device)
                 x_embs = self.encoder(x_input.view(1, -1))
