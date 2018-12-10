@@ -189,9 +189,9 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
                             epoch, loss, np.exp(loss)))
                 
                 # sample from the language model
-                words = sample_lm(model)
-                log("Sample: {}".format(' '.join(words)))
-                time.sleep(1)
+                #words = sample_lm(model)
+                #log("Sample: {}".format(' '.join(words)))
+                #time.sleep(1)
         
         log('-' * 89)
         log("Training complete")
