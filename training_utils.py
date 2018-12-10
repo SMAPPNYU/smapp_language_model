@@ -96,12 +96,13 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
     model.train() if train else model.eval()
     loss = AverageMeter()
     accuracy = AverageMeter()
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    #loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    loader = dataset
     #i = 0
     for X, y in loader:
         model.zero_grad() 
         X = X.squeeze().to(device)
-        y = y.squeeze().view(-1).to(device)
+        y = y.squeeze().contiguous().view(-1).to(device)        
 
         # get a predition    
         hidden = model.init_hidden(X.size(0))
@@ -157,11 +158,17 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
     try: 
         for epoch in tqdm(range(num_epochs)):
             # scheduler goes here...
-            loss, accuracy = training_epoch(model = model, dataset = training_set, criterion = criterion, optim = optim, scheduler = scheduler, batch_size = batch_size, device=device)
+            loss, accuracy = training_epoch(model=model, dataset=training_set, 
+                                            criterion=criterion, optim=optim, 
+                                            scheduler=scheduler, batch_size=batch_size, 
+                                            device=device)
             history.update_loss(loss)
             
             if validation_set:
-                val_loss, val_accuracy = validation_epoch(model = model, dataset = validation_set, criterion = criterion, optim = optim, scheduler = scheduler, batch_size = batch_size, device=device)  
+                val_loss, val_accuracy = validation_epoch(model=model, dataset=validation_set, 
+                                                          criterion=criterion, optim=optim, 
+                                                          scheduler=scheduler, batch_size=batch_size, 
+                                                          device=device)  
                 history.update_val_loss(val_loss)
                 if val_loss < history.min_loss:
                     save_state_dict(model, best_model_path)

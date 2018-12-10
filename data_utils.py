@@ -36,12 +36,27 @@ class SpacyTokenizer:
 
 
 class IndexVectorizer:
-
     """
     Transforms a Corpus into lists of word indices.
+    
+    Arguments
+    ----------
+    :param max_words: Maximum vocabulary size
+    :param min_frequency: Minimum document for a word to be included
+        in vocabulary.
+    :param start_end_tokens: bool, should start of document and end of 
+        document tokens be inserted?
+    :param tokenize: Function that takes a string as an argument and 
+        returns an iterable of tokens.
+    :param offset: offset a vector by offset tokens.
     """
     def __init__(self, max_words=None, min_frequency=None, 
-                 start_end_tokens=False, maxlen=None):
+                 start_end_tokens=False, tokenize=None, 
+                 offset=0):
+        if tokenize is None:
+            self.tokenize = lambda x: x.lower().split()
+        else:
+            self.tokenize = tokenize
         self.vocabulary = None
         self.vocabulary_size = 0
         self.word2idx = dict()
@@ -49,13 +64,23 @@ class IndexVectorizer:
         self.max_words = max_words
         self.min_frequency = min_frequency
         self.start_end_tokens = start_end_tokens
-        self.maxlen = maxlen
-
-    def _find_max_document_length(self, corpus):
-        self.maxlen = max(len(document) for document in corpus)
-        if self.start_end_tokens:
-            self.maxlen += 2
-
+        
+    def fit(self, documents):
+        corpus = [self.tokenize(doc) for doc in documents]
+        self._build_vocabulary(corpus)
+        self._build_word_index()
+        return self
+    
+    def transform(self, documents, offset=0):           
+        out = [] 
+        for document in documents:
+            vector = [self.word2idx.get(word, self.word2idx['<UNK>']) 
+                      for word in document]
+            if self.start_end_tokens:
+                vector = self.add_start_end(vector)
+            out.append(vector[offset:])         
+        return out  
+                
     def _build_vocabulary(self, corpus):
         vocabulary = Counter(word for document in corpus for word in document)
         if self.max_words:
@@ -82,138 +107,40 @@ class IndexVectorizer:
             self.word2idx[word] = idx + offset
         self.idx2word = {idx: word for word, idx in self.word2idx.items()}
 
-    def fit(self, corpus):
-        if not self.maxlen:
-            self._find_max_document_length(corpus)
-        self._build_vocabulary(corpus)
-        self._build_word_index()
-
-    def pad_document_vector(self, vector):
-        padding = self.maxlen - len(vector)
-        vector.extend([self.word2idx['<PAD>']] * padding)
-        return vector
-
     def add_start_end(self, vector):
         vector.append(self.word2idx['<END>'])
         return [self.word2idx['<START>']] + vector
-
-    def transform_document(self, document, offset=0):
-        """
-        Vectorize a single document
-        """
-        vector = [self.word2idx.get(word, self.word2idx['<UNK>']) 
-                  for word in document]
-        if len(vector) > self.maxlen:
-            vector = vector[:self.maxlen]
-        if self.start_end_tokens:
-            vector = self.add_start_end(vector)
-        vector = vector[offset:self.maxlen]
-        
-        return self.pad_document_vector(vector)
-
-    def transform(self, corpus):
-        """
-        Vectorizes a corpus in the form of a list of lists.
-        A corpus is a list of documents and a document is a list of words.
-        """
-        return [self.transform_document(document) for document in corpus]
-
-class LanguageModelDataset(Dataset):
-
-    def __init__(self, dataframe, text_column='text', label_column='label', 
-                 tokenizer=None):
-        self.input_data = dataframe
-        if tokenizer is None:
-            self.tokenizer = lambda x: x.lower().split()
-        else:
-            self.tokenizer = tokenizer
-        self.id2token = []
-        self.token2id = {}
-        self.data = []
-    
-        # Make vocab
-        for doc in self.input_data[text_column]:
-            tokens = self.tokenizer(doc)
-            for t in tokens:
-                if t not in self.token2id:
-                    self.id2token.append(t)   
-                    self.token2id[t] = len(self.id2token) - 1
-        # Numericalize corpus
-        for doc in self.input_data[text_column]:
-            tokens = self.tokenizer(doc)
-            self.data.append([self.token2id[t] for t in tokens])
-            
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
-    
     
 class TextDataset(Dataset):
-    def __init__(self, data, vectorizer,  tokenizer=None, text_col='text', stopwords=None):
+    def __init__(self, data, vectorizer, text_col='text', label_col=None):
         '''
         Extends PyTorch Dataset.
         
         :param path: The path to the input csv. There must be a ``text_col`` column.
         :param text_col: The name of the column containing text.
-        :param vectorizer: A class that contains a ``transform_document`` function, 
-            which converts word2idx. Needs an ``offset`` param for language model.
-        :param tokenizer: Pass a tokenizer function that takes a string and returns
-            a list of tokens. Defaults to split and lower.
-        :stopwords: A list of set of stopwords to ignore during tokenization.
+        :param label_col: The name of the column containing the labels.
+        :param vectorizer: A class that contains ``fit``, ``transform`` and
+            ```fit_transform`` functions
         '''
         if isinstance(data, str):
-            self.corpus = pd.read_csv(data)
-        elif isinstance(data, pd.DataFrame):
-            self.corpus = data
-        else:
-            raise "data must be a filepath to a csv or a Pandas dataframe"
-        self.text_col = text_col
-        self.tokenizer = tokenizer
+            data = pd.read_csv(data)
         self.vectorizer = vectorizer
-        self.stopwords = stopwords
-        self._tokenize_corpus()
-        if self.stopwords: self._remove_stopwords() 
-        self._vectorize_corpus()
-
-    def _remove_stopwords(self):
-        stopfilter = lambda doc: [word for word in doc if word not in self.stopwords]
-        self.corpus['tokens'] = self.corpus['tokens'].apply(stopfilter)
-
-    def _tokenize_corpus(self):
-        if self.tokenizer:
-            self.corpus['tokens'] = self.corpus[self.text_col].apply(self.tokenizer)
-        else:
-            self.corpus['tokens'] = self.corpus[self.text_col].apply(lambda x: x.lower().split())
-
-    def _vectorize_corpus(self):
-        '''
-        Vectorizes the input (X) and the target (y), which is just the input offset by 1.
-        Ex -> "the boy eats too much" becomes "boy eats too much"
-        '''
         if not self.vectorizer.vocabulary:
-            self.vectorizer.fit(self.corpus['tokens'])
-        self.corpus['vectors'] = self.corpus['tokens'].apply(self.vectorizer.transform_document)
-        self.corpus['target'] = self.corpus['tokens'].apply(self.vectorizer.transform_document,
-                                                            offset=1)
+            self.vectorizer.fit(data[text_col])
+        self.texts = self.vectorizer.transform(data[text_col])
+        if label_col is None:
+            self.labels = [1 for x in range(data.shape[0])]
+        else:
+            self.labels = [x for x in data[label_col]]
 
     def __getitem__(self, index):
-        sentence = self.corpus['vectors'].iloc[index]
-        target = self.corpus['target'].iloc[index]
-        return torch.LongTensor(sentence), torch.LongTensor(target)
+        return {'text': self.texts[index], 
+                'label': self.labels[index]}
 
     def __len__(self):
-        return len(self.corpus)
+        return len(self.labels)
     
-def simple_tokenizer(text):
-    '''
-    An example of a tokenizer to pass to TextDataset's ``tokenizer`` param
-    '''
-    return text.lower().split()
-
-
-class LanguageModelDataLoader:
+class LMDataLoader:
     '''Data Loader for language model training
     
     This dataloader returns the data in batches with randomized sequence 
@@ -221,8 +148,8 @@ class LanguageModelDataLoader:
     
     Arguments
     ----------
-    param: dataset: torch.utils.data.Dataset, returning a single vectorized 
-        doc on `__getitem__`
+    param: dataset: torch.utils.data.Dataset, returning  `{'text': single vectorized 
+        doc on `__getitem__`, 'label': integer label}
     param: batch_size: int, batch size of the language model
     param: target_seq_len: int, the expected value (ish) for the randomized 
         sequence length
@@ -236,7 +163,7 @@ class LanguageModelDataLoader:
     Methods
     ----------
     __iter__: yields batches of documents as X and shifted by one token 
-        as y of shape `random_seq_len x batch_size`.
+        as y. Both of shape `batch_size x random_seq_len`.
       
     Details
     ----------
@@ -263,9 +190,9 @@ class LanguageModelDataLoader:
         '''
         if self.shuffle:
             order = np.random.permutation(len(self.dataset))
-            return [self.dataset[i] for i in order]
+            return [self.dataset[i]['text'] for i in order]
         else:
-            return [self.dataset[i] for i in range(len(self.dataset))]
+            return [self.dataset[i]['text'] for i in range(len(self.dataset))]
         
     def _batchify(self, data):
         '''
@@ -328,4 +255,30 @@ class LanguageModelDataLoader:
             # than the input (which would break the model or requre padding)
             if x.shape[0] > y.shape[0]:
                 break
-            yield x, y
+            # TODO: the double transpose can probably be solved more elegantly
+            yield torch.transpose(x, 0, 1), torch.transpose(y, 0, 1)
+            
+class CLFDataLoader(DataLoader):
+    '''Dataloader for text classification data
+    
+    Extends the standard torch.utils.data.DataLoader by adding,
+    batch-wise (front-)padding
+    
+    Arguments
+    ----------
+    param: dataset: torch.utils.data.Dataset
+    '''
+    
+    def __init__(self, dataset, batch_size, padding_idx=0, 
+                 sampler=None, shuffle=True):
+        super().__init__(dataset=dataset, collate_fn=self._pad_collate, 
+                         sampler=sampler, shuffle=shuffle, batch_size=batch_size)
+        self.padding_idx = padding_idx
+        
+    def _pad_collate(self, samples):
+        max_len = max(len(s['text']) for s in samples)
+        res = torch.zeros(max_len, len(samples)).long() + self.padding_idx
+        for i,s in enumerate(samples):
+            res[-len(s['text']):, i] = torch.LongTensor(s['text'])
+        # TODO: Here again, these shouldn't have to be transposed in the first place
+        return torch.transpose(res, 0, 1), torch.tensor([s['label'] for s in samples])

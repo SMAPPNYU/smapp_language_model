@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class RNNLM(nn.Module):
-    def __init__(self, device, vocab_size, seq_len, embedding_size, 
+    def __init__(self, device, vocab_size, embedding_size, 
                  hidden_size, batch_size, 
                  dropout=.5, num_layers=1, tie_weights=False, 
                  bidirectional=False, word2idx={}, log_softmax=False,):
@@ -13,7 +13,6 @@ class RNNLM(nn.Module):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.batch_size = batch_size
-        self.seq_len = seq_len
         self.tie_weights = tie_weights
         self.num_layers = num_layers
         self.num_directions = 1 if not bidirectional else 2
@@ -113,6 +112,7 @@ class RNNLM(nn.Module):
         logit.size # (bsz, seq_len, vocab_size)
         equivalent to (output.size(0), output.size(1), logit.size(1)
         '''
+        seq_len = x.size(1)
         x_emb = self.encoder(x)
         
         output, hidden = self.lstm1(x_emb, hidden)
@@ -120,7 +120,7 @@ class RNNLM(nn.Module):
         
         logit = self.decoder(self.dropout(output))
         if self.log_softmax:
-            logit = self.log_softmax(logit)
-        logit = logit.view(logit.size(0) * self.seq_len, self.vocab_size)
+            logit = self.log_softmax(logit)       
+        logit = logit.view(logit.size(0) * seq_len, self.vocab_size)
         
         return logit, hidden
