@@ -74,8 +74,9 @@ class IndexVectorizer:
     def transform(self, documents, offset=0):           
         out = [] 
         for document in documents:
+            words = self.tokenize(document)
             vector = [self.word2idx.get(word, self.word2idx['<UNK>']) 
-                      for word in document]
+                      for word in words]
             if self.start_end_tokens:
                 vector = self.add_start_end(vector)
             out.append(vector[offset:])         

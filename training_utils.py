@@ -122,9 +122,8 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
         if train:
             lossy.backward()
             optim.step()
-            #i+=1
-            scheduler.step()
-            #print(i)
+            if scheduler is not None:
+                scheduler.step()
 
     return loss.avg, accuracy.avg
 
@@ -141,8 +140,9 @@ def validation_epoch(*args, **kwargs):
     
 def sample_lm(model, length):
     '''Samples a language model and returns generated words'''
-    start_idx = model.word2idx['<START>']
-    indices = model.sample(start_idx, length)
+    #start_idx = model.word2idx['<START>']
+    model.eval()
+    indices = model.sample()
     words = [model.idx2word[index] for index in indices]
     
     return words
