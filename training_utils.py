@@ -98,7 +98,6 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
     accuracy = AverageMeter()
     #loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     loader = dataset
-    #i = 0
     for X, y in loader:
         model.zero_grad() 
         X = X.squeeze().to(device)
@@ -124,7 +123,6 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
             optim.step()
             if scheduler is not None:
                 scheduler.step()
-
     return loss.avg, accuracy.avg
 
 
