@@ -79,7 +79,7 @@ class RNNLM(nn.Module):
                 layer.bias.data.fill_(0)
     
     
-    def sample(self, seed='This is a bad', length=10):
+    def sample(self, seed='This ', length=20):
         '''
         Generates a sequence of text given a starting word ix and hidden state.
         '''
