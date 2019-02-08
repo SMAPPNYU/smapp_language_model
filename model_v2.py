@@ -4,19 +4,25 @@ import torch.nn.functional as F
 
 class LockedDropout(nn.Module):
     '''
-    Handles dropout for an entire batch
+    Handles dropout for an entire batch.
     '''
     def __init__(self, p=.5):
         super().__init__()
         self.p = p
 
     def forward(self, x):
+        '''
+        During training, will create a mask to dropout and scale
+        each row uniformly. Assumes x is 3-dimensional.
+        '''
         if not self.training or self.p == 0.:
             return x
-        m = x.new(x.size(0), 1, x.size(2)) \
-             .bernoulli_(1 - self.p) \
-             .div_(1 - self.p)
-        return m * x
+        
+        mask = x.new(1, x.size(1), x.size(2)) \
+                .bernoulli_(1 - self.p) \
+                .div_(1 - self.p)
+        
+        return mask * x
     
 def _detach(X):
     '''
@@ -34,7 +40,10 @@ def _detach(X):
 
 def embedded_dropout(embed, inputs, p=0.1, scale=None):
     '''
-    This droputs out weights in the embedding.
+    This creates a dropout mask to operate on each row of an embedding.
+    What that means is for each batch the same embedding indices (or words)
+    are dropped out.
+    
     :param embed: is a torch embedding
     :param inputs: is a LongTensor to feed into the embedding
     :param p: is the dropout rate.
@@ -96,7 +105,8 @@ class RNNLM(nn.Module):
         # Model Layers
         self.encoder = nn.Embedding(vocab_size, embedding_size, 
                                     padding_idx = word2idx.get('<PAD>', 1))
-        self.rnns = [nn.LSTM(embedding_size, hidden_size, 
+        self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size, # see footnote1
+                             hidden_size, 
                              num_layers = 1, 
                              bidirectional = bidirectional,
                              batch_first = True) for l in range(num_layers)]
@@ -106,7 +116,7 @@ class RNNLM(nn.Module):
         
         # initialize the encoder and decoder weights, initialize the hidden state.
         self._init_weights()
-        self._init_hidden()
+        self.init_hidden()
         
         # tie enc/dec weights
         if self.tie_weights:
@@ -129,19 +139,26 @@ class RNNLM(nn.Module):
         '''
         if bsz == None: 
             bsz = self.batch_size
-        h0 = torch.zeros(self.num_directions, bsz, self.hidden_size)#.to(self.device)
-        c0 = torch.zeros(self.num_directions, bsz, self.hidden_size )#.to(self.device)
+        h0 = torch.zeros(self.num_directions, bsz, self.hidden_size).to(self.device)
+        c0 = torch.zeros(self.num_directions, bsz, self.hidden_size ).to(self.device)
         return (h0, c0)
     
     
-    def _init_hidden(self, bsz=None):
+    def init_hidden(self, bsz=None):
         '''
-        Initalizes each row of the RNNs
+        Initalizes the hidden state for each layer of the RNN.
+        Note that hidden states are stored in the class!
+        The hidden state is a list (of length num_layers) of tuples.
+        See `_reset_hidden_layer()` for the dimensions of the tuples of tensors.
+        
         '''
         self.hidden = [self._reset_hidden_layer(bsz=bsz) for l in range(self.num_layers)]
     
     
     def _init_weights(self):
+        '''
+        Initializes the bias and weights for the encoder and decoder
+        '''
         initrange = 0.1
         em_layer = [self.encoder]
         lin_layers = [self.decoder]
@@ -151,42 +168,52 @@ class RNNLM(nn.Module):
                 layer.bias.data.fill_(0)
     
     
-    def sample(self, x_start, length):
+    def sample(self, seed='This is bad', length=10, return_words=False):
         '''
-        Generates a sequence of text given a starting word ix and hidden state.
+        Generates a sequence of text given some start seed words
         '''
         with torch.no_grad():
-            indices = [x_start]
+            indices = [self.word2idx.get(w, 1) for w in seed.lower().split()]
+            self.init_hidden()
+            """
+            # Indicies are currently treated like a batch right now and that's wrong
+            # ideally we iterate through each seed to get the correct hidden state for preds.
+            for i in range(len(indices)):
+                x_input = torch.LongTensor(indices[i]).to(self.device)
+                x_input = x_input.unsqueeze(0)
+            """
+            
             for i in range(length):
                 # create inputs
                 x_input = torch.LongTensor(indices).to(self.device)
-                x_embs = self.encoder(x_input.view(1, -1))
-
-                # send input through the rnn
-                output, hidden = self.lstm1(x_embs)
-                output, hidden = self.lstm2(output, hidden)
-
-                # format the last word of the rnn so we can softmax it.
-                one_dim_last_word = output.squeeze()[-1] if i > 0 else output.squeeze()
-                fwd = one_dim_last_word[ : self.hidden_size ]
-                bck = one_dim_last_word[ self.hidden_size : ]
-
-                # pick a word from the disto
-                word_weights = torch.softmax(fwd, dim=0)
-                word_idx = torch.multinomial(word_weights, num_samples=1).squeeze().item()
-                indices.append(word_idx)
-
-        return indices
+                x_input = x_input.unsqueeze(0)
+                
+                output, hidden = self(x_input)
+                last_state = output[-1, :]
+                predicted_probabilities = torch.softmax(last_state, dim=0)
+                idx = torch.multinomial(predicted_probabilities, 1).item()
+                indices.append(idx)
+        
+        if return_words:        
+            words = [self.idx2word.get(i, 'UNK') for i in indicies]
+            return words
+        
+        return indicies
     
-    
-    def forward(self, x, hidden, intermediaries=False):
+    def forward(self, x, return_hidden=False, intermediaries=False):
         '''
         Iterates through the input (which are LongTensors of word indices),
         converts indicies to word embeddings, and 
         each embedding is sent through the forward function of each RNN layer.
         Dropout the last hidden layer and decode to a logit
-        x.size() #(bsz, seq_len)
         
+        Hidden states for x are stored in `self.hidden`, if you want to manually set a hidden state,
+        you can set it as model.hidden_state = my_hidden_states.
+        
+        Be sure the new hidden states are the same dimensions and on the same device.
+        See `_init_hidden_state()` for more information about the dimensions.
+        
+        x.size() #(bsz, seq_len)
         logit.size # (bsz, seq_len, vocab_size)
         equivalent to (output.size(0), output.size(1), logit.size(1)
         '''
@@ -200,26 +227,27 @@ class RNNLM(nn.Module):
         )
         
         # dropout words from the embedding matrix
-        x_emb = self.input_dropout(x_emb)
+        x_emb = self.input_dropout(x_emb)        
         
         # send the embedding matrix through each RNN layer.
+        # remember: each rnn is an lstm...
         output = x_emb
         new_hidden = []
         raw_outputs = []
         outputs = []
         for l, (rnn, drop) in enumerate(zip(self.rnns,
-                                              self.hidden_dropout)):
+                                            self.hidden_dropout)):
             output, hidden = rnn(output, self.hidden[l])
             new_hidden.append(hidden)
             raw_outputs.append(output)
             
             # dropout between inner RNN layers
-            if l != self.n_layers - 1: 
+            if l != self.num_layers - 1: 
                 raw_output = drop(output)
                 outputs.append(raw_output)
                 
-        # overwrite the old hidden states, and detach from from GPU memory.
-        self.hidden = [_detach(h) for h in new_hidden]
+        # overwrite the old hidden states, and detach from from GPU memory. NOTE why are we detaching?
+        self.hidden = new_hidden
         
         # send the output of the last RNN layer through the decoder (linear layer)
         logit = self.decoder(self.dropout(raw_output))
@@ -230,5 +258,14 @@ class RNNLM(nn.Module):
 
         if intermediaries:
             return logit, self.hidden, raw_outputs, outputs
-        
-        return logit, self.hidden
+        if return_hidden:
+            return logit, self.hidden
+        return logit
+
+"""
+# FOOTNOTES
+footnote1: 
+the first RNN layer recieves an embedding, 
+subsequent layers get the output of the previous layer, 
+which has a hidden_size number of features rather than embedding_size.
+"""

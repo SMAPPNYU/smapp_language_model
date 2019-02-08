@@ -99,16 +99,14 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
     #loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     loader = dataset
     #i = 0
-    for X, y in loader:
+    for i, (X, y) in enumerate(loader):
         model.zero_grad() 
         X = X.squeeze().to(device)
         y = y.squeeze().contiguous().view(-1).to(device)        
 
         # get a predition    
-        hidden = model.init_hidden(X.size(0))
-        for _ in hidden:
-            _.to(device)
-        y_, hidden = model(X, hidden)
+        model.init_hidden()
+        y_ = model(X)
         
         # calculate loss and accuracy
         lossy = criterion(y_.squeeze(), y.squeeze())
