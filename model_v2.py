@@ -24,18 +24,18 @@ class LockedDropout(nn.Module):
         
         return mask * x
     
-def _detach(X):
+def _detach(X, cpu=True):
     '''
-    Detaches a torch tensor from the graph and switches to CPU.
+    Detaches a torch tensor from the graph (and optionally moved to CPU).
     If the X is a tuple, such as the hidden states returned from LSTMs,
-    Then each hidden state is detached recursively.
+    then each hidden state is detached recursively.
     '''
-    if isinstance(X, tuple):
-        return [_detach(_) for _ in X]
+    if isinstance(X, tuple) or isinstance(X, list):
+        return [_detach(_, cpu) for _ in X]
     if not isinstance(X, torch.Tensor):
         return X
     X = X.detach()
-    return X.cpu()
+    return X.cpu() if cpu else X
 
 
 def embedded_dropout(embed, inputs, p=0.1, scale=None):
@@ -115,8 +115,8 @@ class RNNLM(nn.Module):
         self.decoder = nn.Linear(hidden_size * self.num_directions, vocab_size)
         
         # initialize the encoder and decoder weights, initialize the hidden state.
-        self._init_weights()
         self.init_hidden()
+        self._init_weights()
         
         # tie enc/dec weights
         if self.tie_weights:
@@ -139,8 +139,10 @@ class RNNLM(nn.Module):
         '''
         if bsz == None: 
             bsz = self.batch_size
-        h0 = torch.zeros(self.num_directions, bsz, self.hidden_size).to(self.device)
-        c0 = torch.zeros(self.num_directions, bsz, self.hidden_size ).to(self.device)
+        h0 = torch.zeros(self.num_directions, bsz, 
+                         self.hidden_size).to(self.device)
+        c0 = torch.zeros(self.num_directions, bsz, 
+                         self.hidden_size).to(self.device)
         return (h0, c0)
     
     
@@ -174,13 +176,13 @@ class RNNLM(nn.Module):
         '''
         with torch.no_grad():
             indices = [self.word2idx.get(w, 1) for w in seed.lower().split()]
-            self.init_hidden()
+            self.init_hidden(bsz=1)
             """
-            # Indicies are currently treated like a batch right now and that's wrong
-            # ideally we iterate through each seed to get the correct hidden state for preds.
-            for i in range(len(indices)):
-                x_input = torch.LongTensor(indices[i]).to(self.device)
+            for i in range(len(indices)): # see footnote2
+                # create inputs
+                x_input = torch.LongTensor(indices[:i+1]).to(self.device)
                 x_input = x_input.unsqueeze(0)
+                output = self(x_input)
             """
             
             for i in range(length):
@@ -188,17 +190,17 @@ class RNNLM(nn.Module):
                 x_input = torch.LongTensor(indices).to(self.device)
                 x_input = x_input.unsqueeze(0)
                 
-                output, hidden = self(x_input)
+                output = self(x_input)
                 last_state = output[-1, :]
                 predicted_probabilities = torch.softmax(last_state, dim=0)
                 idx = torch.multinomial(predicted_probabilities, 1).item()
                 indices.append(idx)
         
         if return_words:        
-            words = [self.idx2word.get(i, 'UNK') for i in indicies]
+            words = [self.idx2word.get(i, 'UNK') for i in indices]
             return words
         
-        return indicies
+        return indices
     
     def forward(self, x, return_hidden=False, intermediaries=False):
         '''
@@ -247,7 +249,7 @@ class RNNLM(nn.Module):
                 outputs.append(raw_output)
                 
         # overwrite the old hidden states, and detach from from GPU memory. NOTE why are we detaching?
-        self.hidden = new_hidden
+        self.hidden = [_detach(h, cpu=False) for h in new_hidden]
         
         # send the output of the last RNN layer through the decoder (linear layer)
         logit = self.decoder(self.dropout(raw_output))

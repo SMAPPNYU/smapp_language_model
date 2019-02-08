@@ -120,9 +120,7 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
         if train:
             lossy.backward()
             optim.step()
-            #i+=1
             scheduler.step()
-            #print(i)
 
     return loss.avg, accuracy.avg
 
@@ -139,8 +137,8 @@ def validation_epoch(*args, **kwargs):
     
 def sample_lm(model, length):
     '''Samples a language model and returns generated words'''
-    start_idx = model.word2idx['<START>']
-    indices = model.sample(start_idx, length)
+    seed = 'this is bad' if random.random() >= .5 else 'this is good'
+    indices = model.sample(seed=seed, length=length)
     words = [model.idx2word[index] for index in indices]
     
     return words
@@ -187,7 +185,7 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
                             epoch, loss, np.exp(loss)))
                 
                 # sample from the language model
-                words = sample_lm(model, 70)
+                words = sample_lm(model, 50)
                 log("Sample: {}".format(' '.join(words)))
                 time.sleep(1)
         
