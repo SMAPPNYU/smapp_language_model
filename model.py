@@ -122,7 +122,7 @@ class RNNLM(nn.Module):
         if self.tie_weights:
             self._tie_weights()
             
-    def _tie_weights():
+    def _tie_weights(self):
         '''
         Tie the encoder and decoder's weights
         '''
