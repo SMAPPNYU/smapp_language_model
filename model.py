@@ -245,14 +245,14 @@ class RNNLM(nn.Module):
             
             # dropout between inner RNN layers
             if l != self.num_layers - 1: 
-                raw_output = drop(output)
-                outputs.append(raw_output)
+                output = drop(output)
+                outputs.append(output)
                 
         # overwrite the old hidden states, and detach from from GPU memory. NOTE why are we detaching?
         self.hidden = [_detach(h, cpu=False) for h in new_hidden]
         
         # send the output of the last RNN layer through the decoder (linear layer)
-        logit = self.decoder(self.dropout(raw_output))
+        logit = self.decoder(self.dropout(output))
         outputs.append(logit)
         if self.log_softmax:
             logit = self.log_softmax(logit)
