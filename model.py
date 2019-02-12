@@ -6,7 +6,7 @@ class RNNLM(nn.Module):
     def __init__(self, device, vocab_size, embedding_size, 
                  hidden_size, batch_size, 
                  dropout=.5, num_layers=1, tie_weights=False, 
-                 bidirectional=False, word2idx={}, log_softmax=False,):
+                 bidirectional=False, word2idx={}, log_softmax=False):
         super(RNNLM, self).__init__()
         self.device = device
         self.embedding_size = embedding_size
@@ -33,6 +33,11 @@ class RNNLM(nn.Module):
                              batch_first = True)
         
         self.lstm2 = nn.LSTM(hidden_size * self.num_directions, hidden_size, 
+                             num_layers = 1, 
+                             bidirectional = bidirectional,
+                             batch_first = True)
+        
+        self.lstm3 = nn.LSTM(hidden_size * self.num_directions, hidden_size, 
                              num_layers = 1, 
                              bidirectional = bidirectional,
                              batch_first = True)
@@ -74,35 +79,29 @@ class RNNLM(nn.Module):
                 layer.bias.data.fill_(0)
     
     
-    def sample(self, x_start, length):
+    def sample(self, seed='This ', length=20):
         '''
         Generates a sequence of text given a starting word ix and hidden state.
         '''
         with torch.no_grad():
-            indices = [x_start]
+            indices = [self.word2idx.get(w, 1) for w in seed.lower().split()]
+            hidden = self.init_hidden(1)
             for i in range(length):
                 # create inputs
                 x_input = torch.LongTensor(indices).to(self.device)
-                x_embs = self.encoder(x_input.view(1, -1))
+                x_input = x_input.unsqueeze(0)
+                
+                output, hidden = self(x_input, hidden)
+                last_state = output[-1, :]
+                predicted_probabilities = torch.softmax(last_state, dim=0)
 
-                # send input through the rnn
-                output, hidden = self.lstm1(x_embs)
-                output, hidden = self.lstm2(output, hidden)
+                idx = torch.multinomial(predicted_probabilities, 1).item()
+                indices.append(idx)
 
-                # format the last word of the rnn so we can softmax it.
-                one_dim_last_word = output.squeeze()[-1] if i > 0 else output.squeeze()
-                fwd = one_dim_last_word[ : self.hidden_size ]
-                bck = one_dim_last_word[ self.hidden_size : ]
-
-                # pick a word from the disto
-                word_weights = torch.softmax(fwd, dim=0)
-                word_idx = torch.multinomial(word_weights, num_samples=1).squeeze().item()
-                indices.append(word_idx)
-
-        return indices
+            return indices
     
     
-    def forward(self, x, hidden, log_softmax=False):
+    def forward(self, x, hidden):
         '''
         Iterates through the input, encodes it.
         Each embedding is sent through the step function.
@@ -117,6 +116,7 @@ class RNNLM(nn.Module):
         
         output, hidden = self.lstm1(x_emb, hidden)
         output, hidden = self.lstm2(self.dropout(output), hidden)
+        output, hidden = self.lstm3(self.dropout(output), hidden)
         
         logit = self.decoder(self.dropout(output))
         if self.log_softmax:

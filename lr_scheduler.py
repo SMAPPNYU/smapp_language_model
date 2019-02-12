@@ -111,12 +111,13 @@ class CyclicLR(_LRScheduler):
         cut_pt = self.epoch_length * self.cut_frac
         if self.cycle_iter > cut_pt:
             p = 1 - (self.cycle_iter - cut_pt)/(self.epoch_length - cut_pt)
-            #print i, "jere"
         else: 
             p = self.cycle_iter/cut_pt
         res = i * (1 + p*(self.ratio-1)) / self.ratio
         #1
-        if self.epoch_length == self.cycle_iter:
+        if self.epoch_length < self.cycle_iter:
+            if self.verbose:
+                print("Condition is met")
             self.cycle_iter = 0
             self.cycle_count += 1
         return res

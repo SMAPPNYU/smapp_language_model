@@ -98,8 +98,8 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
     accuracy = AverageMeter()
     #loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     loader = dataset
-    #i = 0
-    for i, (X, y) in enumerate(loader):
+
+    for X, y in loader:
         model.zero_grad() 
         X = X.squeeze().to(device)
         y = y.squeeze().contiguous().view(-1).to(device)        
@@ -120,7 +120,8 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
         if train:
             lossy.backward()
             optim.step()
-            scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
 
     return loss.avg, accuracy.avg
 
@@ -137,6 +138,7 @@ def validation_epoch(*args, **kwargs):
     
 def sample_lm(model, length):
     '''Samples a language model and returns generated words'''
+    model.eval()
     seed = 'this is bad' if random.random() >= .5 else 'this is good'
     indices = model.sample(seed=seed, length=length)
     words = [model.idx2word[index] for index in indices]
