@@ -105,7 +105,7 @@ class RNNLM(nn.Module):
         # Model Layers
         self.encoder = nn.Embedding(vocab_size, embedding_size, 
                                     padding_idx = word2idx.get('<PAD>', 1))
-        self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size*self.num_directions, # see footnote1
+        self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size * self.num_directions, # see footnote1
                              hidden_size, 
                              num_layers = 1, 
                              bidirectional = bidirectional,
@@ -236,11 +236,9 @@ class RNNLM(nn.Module):
         new_hidden = []
         raw_outputs = []
         outputs = []
-        i=0
-        hidden = None
         for l, (rnn, drop) in enumerate(zip(self.rnns,
                                             self.hidden_dropout)):
-            output, hidden = rnn(output, None if hidden is None else hidden)
+            output, hidden = rnn(output, hidden[l])
             new_hidden.append(hidden)
             raw_outputs.append(output)
             
@@ -253,7 +251,7 @@ class RNNLM(nn.Module):
         self.hidden = [_detach(h, cpu=False) for h in new_hidden]
         
         # send the output of the last RNN layer through the decoder (linear layer)
-        logit = self.decoder(self.dropout(output[:, :, 300:]))
+        logit = self.decoder(self.dropout(output))
         outputs.append(logit)
         if self.log_softmax:
             logit = self.log_softmax(logit)
@@ -270,5 +268,5 @@ class RNNLM(nn.Module):
 footnote1: 
 the first RNN layer recieves an embedding, 
 subsequent layers get the output of the previous layer, 
-which has a hidden_size number of features rather than embedding_size.
+which has N = hidden_size * num_directions features.
 """

@@ -94,6 +94,7 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
               train=False, shuffle=True):
     '''A wrapper for a training, validation or test run.'''
     model.train() if train else model.eval()
+    model.init_hidden()
     loss = AverageMeter()
     accuracy = AverageMeter()
     #loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
@@ -105,7 +106,6 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
         y = y.squeeze().contiguous().view(-1).to(device)        
 
         # get a predition    
-        model.init_hidden()
         y_ = model(X)
         
         # calculate loss and accuracy
