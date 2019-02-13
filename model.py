@@ -86,7 +86,7 @@ class RNNLM(nn.Module):
         super(RNNLM, self).__init__()
         self.device = device
         self.embedding_size = embedding_size
-        self.hidden_size = hidden_size
+        self.hidden_size = hidden_size 
         self.vocab_size = vocab_size
         self.batch_size = batch_size
         self.tie_weights = tie_weights
@@ -105,7 +105,7 @@ class RNNLM(nn.Module):
         # Model Layers
         self.encoder = nn.Embedding(vocab_size, embedding_size, 
                                     padding_idx = word2idx.get('<PAD>', 1))
-        self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size, # see footnote1
+        self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size*self.num_directions, # see footnote1
                              hidden_size, 
                              num_layers = 1, 
                              bidirectional = bidirectional,
@@ -220,7 +220,6 @@ class RNNLM(nn.Module):
         equivalent to (output.size(0), output.size(1), logit.size(1)
         '''
         bsz, seq_len = x.size()
-        
         # drop out weights in the embedding
         x_emb = embedded_dropout(
             self.encoder, 
@@ -237,9 +236,11 @@ class RNNLM(nn.Module):
         new_hidden = []
         raw_outputs = []
         outputs = []
+        i=0
+        hidden = None
         for l, (rnn, drop) in enumerate(zip(self.rnns,
                                             self.hidden_dropout)):
-            output, hidden = rnn(output, self.hidden[l])
+            output, hidden = rnn(output, None if hidden is None else hidden)
             new_hidden.append(hidden)
             raw_outputs.append(output)
             
@@ -252,7 +253,7 @@ class RNNLM(nn.Module):
         self.hidden = [_detach(h, cpu=False) for h in new_hidden]
         
         # send the output of the last RNN layer through the decoder (linear layer)
-        logit = self.decoder(self.dropout(output))
+        logit = self.decoder(self.dropout(output[:, :, 300:]))
         outputs.append(logit)
         if self.log_softmax:
             logit = self.log_softmax(logit)
