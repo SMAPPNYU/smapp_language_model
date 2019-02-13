@@ -179,9 +179,9 @@ def training_loop(batch_size, num_epochs, display_freq, model, criterion,
             if epoch % display_freq == 0:
                 # display stats
                 if validation_set:
-                    log("Epoch: {:04d}; Loss: {:.4f}; Val-Loss {:.4f}; "
-                        "Perplexity {:.4f}; Val-Perplexity {:.4f}".format(
-                            epoch, loss, val_loss, np.exp(loss), np.exp(val_loss)))
+                    log("Epoch: {:04d}; Train-Loss: {:.4f}; Val-Loss {:.4f}; "
+                        "Train-accuracy {:.4f}; Val-Accuracy {:.4f}".format(
+                            epoch, loss, val_loss, accuracy, val_accuracy))
                 else:
                     log("Epoch: {:04d}; Loss: {:.4f}; Perplexity {:.4f};".format(
                             epoch, loss, np.exp(loss)))
