@@ -74,10 +74,9 @@ class History(object):
         else:
             plt.plot(x, y, 'C0');
     
-def categorical_accuracy(y_true, y_pred):
-    y_true = y_true.float()
-    _, y_pred = torch.max(y_pred.squeeze(), dim=-1)
-    return (y_pred.float() == y_true).float().mean()
+def categorical_accuracy(y_pred_prob, y_true):
+    y_pred = torch.max(y_pred_prob, dim=1)[1]
+    return (y_pred == y_true).float().mean().item()
 
 def softmax_trick(x):
     logits_exp = torch.exp(x - torch.max(x))
@@ -110,8 +109,7 @@ def run_epoch(model, dataset, criterion, optim, scheduler, batch_size, device,
         
         # calculate loss and accuracy
         lossy = criterion(y_.squeeze(), y.squeeze())
-        accy = categorical_accuracy(y_.squeeze().data, 
-                                    y.squeeze().data)
+        accy = categorical_accuracy(y_, y)
         
         loss.update(lossy.data.item())
         accuracy.update(accy)
