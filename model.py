@@ -238,7 +238,7 @@ class RNNLM(nn.Module):
         outputs = []
         for l, (rnn, drop) in enumerate(zip(self.rnns,
                                             self.hidden_dropout)):
-            output, hidden = rnn(output, hidden[l])
+            output, hidden = rnn(output, self.hidden[l])
             new_hidden.append(hidden)
             raw_outputs.append(output)
             
