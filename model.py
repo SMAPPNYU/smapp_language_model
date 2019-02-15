@@ -106,7 +106,7 @@ class RNNLM(nn.Module):
         self.encoder = nn.Embedding(vocab_size, embedding_size, 
                                     padding_idx = word2idx.get('<PAD>', 1))
         self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size * self.num_directions, # see footnote1
-                             hidden_size, 
+                             hidden_size if l != self.num_layers-1 and self.tie_weights else embedding_size, 
                              num_layers = 1, 
                              bidirectional = bidirectional,
                              batch_first = True) for l in range(num_layers)]
@@ -120,29 +120,24 @@ class RNNLM(nn.Module):
         
         # tie enc/dec weights
         if self.tie_weights:
-            self._tie_weights()
+            self.decoder.weight = self.encoder.weight
             
-    def _tie_weights(self):
-        '''
-        Tie the encoder and decoder's weights
-        '''
-        if self.hidden_size != self.embedding_size:
-                raise ValueError('When using the `tied` flag, hidden_size'
-                                 'must be equal to embedding_dim')
-        self.decoder.weight = self.encoder.weight
-    
-    
-    def _reset_hidden_layer(self, bsz=None):
+
+    def _reset_hidden_layer(self, layer_index, bsz=None):
         '''
         Resets (or initalizes) the initial hidden (h0) and output (c0) for an LSTM.
         Returns a tuple of tensors!
         '''
         if bsz == None: 
             bsz = self.batch_size
+        if layer_index != self.num_layers - 1:
+            dim = self.hidden_size
+        else:
+            dim = self.embedding_size
         h0 = torch.zeros(self.num_directions, bsz, 
-                         self.hidden_size).to(self.device)
+                         dim).to(self.device)
         c0 = torch.zeros(self.num_directions, bsz, 
-                         self.hidden_size).to(self.device)
+                         dim).to(self.device)
         return (h0, c0)
     
     
@@ -154,7 +149,8 @@ class RNNLM(nn.Module):
         See `_reset_hidden_layer()` for the dimensions of the tuples of tensors.
         
         '''
-        self.hidden = [self._reset_hidden_layer(bsz=bsz) for l in range(self.num_layers)]
+        self.hidden = [self._reset_hidden_layer(bsz=bsz, layer_index = l) 
+                       for l in range(self.num_layers)]
     
     
     def _init_weights(self):
@@ -170,7 +166,7 @@ class RNNLM(nn.Module):
                 layer.bias.data.fill_(0)
     
     
-    def sample(self, seed='This is bad', length=10, return_words=False):
+    def sample(self, seed='This is a bad', length=10, return_words=False):
         '''
         Generates a sequence of text given some start seed words
         '''
