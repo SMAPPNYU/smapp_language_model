@@ -105,8 +105,15 @@ class RNNLM(nn.Module):
         # Model Layers
         self.encoder = nn.Embedding(vocab_size, embedding_size, 
                                     padding_idx = word2idx.get('<PAD>', 1))
+        
+        #self.rnns = [torch.nn.LSTM(
+        #    self.embedding_size if l == 0 else self.hidden_size * self.num_directions, 
+        #    self.hidden_size if l != self.num_layers - 1 else (self.embedding_size if self.tie_weights else self.hidden_size), 
+        #    num_layers = 1, bidirectional = bidirectional, batch_first = True) 
+        #             for l in range(num_layers)]
+          
         self.rnns = [nn.LSTM(embedding_size if l == 0 else hidden_size * self.num_directions, # see footnote1
-                             hidden_size if l != self.num_layers-1 and self.tie_weights else embedding_size, 
+                             embedding_size if (l == self.num_layers-1 and self.tie_weights) else hidden_size, 
                              num_layers = 1, 
                              bidirectional = bidirectional,
                              batch_first = True) for l in range(num_layers)]
@@ -130,10 +137,10 @@ class RNNLM(nn.Module):
         '''
         if bsz == None: 
             bsz = self.batch_size
-        if layer_index != self.num_layers - 1:
-            dim = self.hidden_size
-        else:
+        if layer_index == self.num_layers - 1 and self.tie_weights:
             dim = self.embedding_size
+        else:
+            dim = self.hidden_size
         h0 = torch.zeros(self.num_directions, bsz, 
                          dim).to(self.device)
         c0 = torch.zeros(self.num_directions, bsz, 
