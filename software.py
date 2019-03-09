@@ -4,6 +4,7 @@ import datetime
 import pandas as pd
 import torch
 import torch.nn as nn
+import copy
 sys.path.append('../')
 from lr_scheduler import CyclicLR
 from training_utils import training_loop, test_loop
@@ -16,7 +17,7 @@ import pickle
 
 class SMaPPLearn:
     
-    def __init__(self, data_dir, max_vocab_size = 20000, batch_size = 50, 
+    def __init__(self, data_dir, train_file, valid_file, max_vocab_size = 20000, batch_size = 50, 
             revectorize = False):
         
         self.data_dir = data_dir
@@ -44,8 +45,8 @@ class SMaPPLearn:
         os.makedirs(model_cache_dir, exist_ok=True)
         self.model_file_lm = os.path.join(model_cache_dir, f'LM__{today}.json')
         
-        self.train_file = os.path.join(data_dir, 'unsup.csv')
-        self.valid_file = os.path.join(data_dir, 'valid.csv')
+        self.train_file = train_file
+        self.valid_file = valid_file
         
         self.revectorize = revectorize
         if self.revectorize or not os.path.isfile(self.data_cache):
@@ -90,8 +91,10 @@ class SMaPPLearn:
         
         print("Created Data Loaders for documents")
         
-    def fit_language_model(self, lm_hidden_dim = 1150, lm_embedding_dim = 400, 
-            lm_lstm_layers = 3, num_epochs=100, display_epoch_freq = 10):
+    def fit_language_model(self, pretrained_itos = None,
+            pretrained_weight_file = None, lm_hidden_dim = 1150, 
+            lm_embedding_dim = 400, lm_lstm_layers = 3, num_epochs=100, 
+            display_epoch_freq = 10):
         
         ## Model Architecture
         self.hidden_dim = lm_hidden_dim
@@ -108,16 +111,64 @@ class SMaPPLearn:
 
         # set up Files to save stuff in
         runtime = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        
+        if pretrained_weight_file is not None and pretrained_itos is not None: 
+            print("Starting Loading pretrained Wikitext model")
+            enc = torch.load(pretrained_weight_file, map_location=lambda storage, loc: storage)
+            self.embedding_dim = enc['0.encoder.weight'].shape[1]
+            self.hidden_dim = int(enc['0.rnns.0.module.weight_hh_l0_raw'].shape[0]/4)
+            self.lstm_layers = 3
             
-        # Build and initialize the model
-        self.lm = RNNLM(self.device, self.vectorizer.vocabulary_size, 
-                    self.embedding_dim, self.hidden_dim, 
-                    self.batch_size, dropout = self.dropout, 
-                    tie_weights = self.lstm_tie_weights, 
-                    num_layers = self.lstm_layers, 
-                    bidirectional = self.lstm_bidirection, 
-                    word2idx = self.vectorizer.word2idx,
-                    log_softmax = False)
+            new_enc = {}
+            for k,v in enc.items():
+                layer_detail = k.split('.')
+                layer_name = layer_detail[-1].replace('_raw', '')
+                if len(layer_detail) == self.lstm_layers: 
+                    new_enc[f'{layer_detail[1]}.{layer_name}'] = v
+                else:
+                    new_enc[f'{layer_detail[1]}.{layer_detail[2]}.{layer_name}'] = v
+            
+            del new_enc['encoder_with_dropout.embed.weight']
+            
+            pretrained_idx2word = pickle.load(open(pretrained_itos, 'rb'))
+            pretrained_word2idx = {k: i for i,k in enumerate(pretrained_idx2word)}
+            
+            new_model_vectorizer = self.vectorizer
+            pretrained_encoder_weights = enc['0.encoder.weight']
+            
+            row_m = pretrained_encoder_weights.mean(dim=0)
+            row_m = [x.item() for x in row_m]
+            
+            new_vocab_size = len(new_model_vectorizer.word2idx)
+            new_encoder_weights = torch.tensor([row_m for i in range(new_vocab_size)])
+            
+            new_idx2weights = {}
+            for word, i in new_model_vectorizer.word2idx.items():
+                if word in pretrained_word2idx:
+                    word_idx = pretrained_word2idx[word]
+                    new_encoder_weights[i] = pretrained_encoder_weights[word_idx]
+
+            new_enc['encoder.weight'] = new_encoder_weights
+            new_enc['decoder.weight'] = copy.copy(new_encoder_weights)
+            new_enc['decoder.bias'] = torch.zeros(new_enc['decoder.weight'].shape[0])
+
+            self.lm = RNNLM(device=self.device, vocab_size=new_vocab_size, 
+                embedding_size=self.embedding_dim, hidden_size=self.hidden_dim, 
+                batch_size=50, num_layers=3, tie_weights=True, 
+                word2idx = new_model_vectorizer.word2idx)
+            print("Initialised loading with pretrained Wikitext model")
+            
+        else:
+            # Build and initialize the model
+            print("No Pretrained Model specified")
+            self.lm = RNNLM(self.device, self.vectorizer.vocabulary_size, 
+                        self.embedding_dim, self.hidden_dim, 
+                        self.batch_size, dropout = self.dropout, 
+                        tie_weights = self.lstm_tie_weights, 
+                        num_layers = self.lstm_layers, 
+                        bidirectional = self.lstm_bidirection, 
+                        word2idx = self.vectorizer.word2idx,
+                        log_softmax = False)
 
         if self.use_gpu:
             self.lm = self.lm.to(self.device)
@@ -156,5 +207,14 @@ class SMaPPLearn:
                                 history=None)
 
 if __name__ == '__main__':
-    test = SMaPPLearn(data_dir = '/home/vishakh/Stuff/SMaPP/', max_vocab_size = 10000, revectorize = False)
-    test.fit_language_model(lm_hidden_dim = 50, lm_embedding_dim=50, display_epoch_freq = 1, num_epochs = 1)
+    
+    test = SMaPPLearn(data_dir = '/home/vishakh/Stuff/SMaPP/', 
+        train_file = '/home/vishakh/Stuff/SMaPP/unsup.csv', 
+        valid_file = '/home/vishakh/Stuff/SMaPP/valid.csv',  
+        max_vocab_size = 10000, revectorize = False)
+    
+    test.fit_language_model(
+        pretrained_weights_file = '/home/vishakh/Stuff/SMaPP/weights-pretrained/fwd_wt103.h5', 
+        pretrained_itos = '/home/vishakh/Stuff/SMaPP/weights-pretrained/itos_wt103.pkl'
+        lm_hidden_dim = 50, lm_embedding_dim=50, 
+        display_epoch_freq = 1, num_epochs = 1)
