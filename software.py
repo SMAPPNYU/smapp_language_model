@@ -112,7 +112,8 @@ class SMaPPLearn:
     def fit_language_model(self, pretrained_itos = None,
             pretrained_weight_file = None, lm_hidden_dim = 1150, 
             lm_embedding_dim = 400, lm_lstm_layers = 3, num_epochs=100, 
-            display_epoch_freq = 10):
+            display_epoch_freq = 1, scheduler = 'ulmfit',
+            max_lrs = [1e-3, 1e-3, 1e-3, 1e-3, 1e-3]):
         
         ## Model Architecture
         self.hidden_dim = lm_hidden_dim
@@ -202,6 +203,7 @@ class SMaPPLearn:
         self.loss = nn.CrossEntropyLoss()
 
         # Extract pointers to the parameters of the lstms
+        
         param_list = [{'params': rnn.parameters(), 'lr': 1e-3} 
             for rnn in self.lm.rnns]
 
@@ -216,8 +218,13 @@ class SMaPPLearn:
             param_list.extend([
                 {'params': self.lm.decoder.parameters(), 'lr':1e-3},
             ])
-
-        self.optimizer = torch.optim.Adam(param_list, lr=0.01)
+        
+        self.optimizer = torch.optim.Adam(param_list)
+        if scheduler == 'ulmfit':
+            self.scheduler = CyclicLR(self.optimizer,  max_lrs=max_lrs, 
+                     mode='ulmfit', ratio=1.5, cut_frac=0.4, 
+                     train_data_loader = self.train_dl, 
+                     verbose=False)
         print("Beginning LM Fine Tuning")
         self.freezeTo(3)
         history = training_loop(batch_size=self.batch_size, 
@@ -226,7 +233,7 @@ class SMaPPLearn:
                                 model=self.lm, 
                                 criterion=self.loss,
                                 optim=self.optimizer,
-                                scheduler=None,
+                                scheduler=self.scheduler,
                                 device=self.device,
                                 training_set=self.train_dl,
                                 validation_set=self.valid_dl,
@@ -240,7 +247,7 @@ class SMaPPLearn:
                                 model=self.lm, 
                                 criterion=self.loss,
                                 optim=self.optimizer,
-                                scheduler=None,
+                                scheduler=self.scheduler,
                                 device=self.device,
                                 training_set=self.train_dl,
                                 validation_set=self.valid_dl,
@@ -254,7 +261,7 @@ class SMaPPLearn:
                                 model=self.lm, 
                                 criterion=self.loss,
                                 optim=self.optimizer,
-                                scheduler=None,
+                                scheduler=self.scheduler,
                                 device=self.device,
                                 training_set=self.train_dl,
                                 validation_set=self.valid_dl,
@@ -263,18 +270,19 @@ class SMaPPLearn:
 	
 if __name__ == '__main__':
     
-    test = SMaPPLearn(data_dir = '/home/vis/ImdbData/', 
-        train_file = '/home/vis/ImdbData/unsup.csv', 
-        valid_file = '/home/vis/ImdbData/valid.csv',  
+    test = SMaPPLearn(data_dir = '../data/imdb/', 
+        train_file = '../data/imdb/unsup.csv', 
+        valid_file = '../data/imdb/valid.csv',  
         max_vocab_size = 20000, revectorize = False)
-    
+    """
     test.fit_language_model(lm_embedding_dim = 200, lm_hidden_dim = 250, 
         num_epochs = 10, display_epoch_freq = 1)
     """ 
     test.fit_language_model(
         pretrained_weight_file = 
-            '/home/vis/ImdbData/weights_pretrained/fwd_wt103.h5', 
+            '../data/imdb/weights_pretrained/fwd_wt103.h5', 
         pretrained_itos = 
-            '/home/vis/ImdbData/weights_pretrained/fitos_wt103.pkl',
-        display_epoch_freq = 1, num_epochs = 15)
-    """
+            '../data/imdb/weights_pretrained/fitos_wt103.pkl',
+        display_epoch_freq = 1, num_epochs = 15, scheduler = 'ulmfit', 
+        max_lrs = [1e-3, 1e-3, 1e-3, 1e-3, 1e-3])
+    #"""

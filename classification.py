@@ -14,7 +14,7 @@ from data_utils import (IndexVectorizer,
                         TextDataset,
                         LMDataLoader,
                         CLFDataLoader)
-BATCH_SIZE = 50
+BATCH_SIZE = 25
 
 # GPU setup
 use_gpu = torch.cuda.is_available()
@@ -39,7 +39,7 @@ valid_ds = TextDataset(data=valid, vectorizer=vectorizer,
 train_dl = CLFDataLoader(dataset=train_ds, batch_size=BATCH_SIZE)
 valid_dl = CLFDataLoader(dataset=valid_ds, batch_size=BATCH_SIZE)
 
-d = torch.load(DATA_DIR+"/models/LM__2019-03-12.json")
+d = torch.load(DATA_DIR+"/models/LM__2019-03-22.json")
 del d["decoder.weight"]
 del d["decoder.bias"]
 
@@ -67,10 +67,10 @@ def get_accuracy(pred_probs, true_class):
     return torch.mean(errors.type(torch.float)).item()
 
 
-optimizer = torch.optim.Adam(final.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(final.parameters(), lr=0.0005)
 criterion = nn.CrossEntropyLoss()
 
-n_epochs = 10
+n_epochs = 30
 
 for epoch in range(n_epochs):
     final.train()
@@ -78,6 +78,8 @@ for epoch in range(n_epochs):
     epoch_train_accs = []
     for x, y in train_dl:
         #final[0].init_hidden()
+        if x.shape[0] != BATCH_SIZE:
+            continue
         x = x.to(device)
         y = y.to(device)
         final.zero_grad()
@@ -89,13 +91,15 @@ for epoch in range(n_epochs):
         optimizer.step()
         epoch_train_accs.append(get_accuracy(res, y))
         del error
-
+    print("Beginning eval")
     # Validation accuracy
     with torch.no_grad():
         final.eval()
         epoch_train_acc = round(np.mean(epoch_train_accs), 3)
         valid_accs = []
         for x, y in valid_dl:
+            if x.shape[0] != BATCH_SIZE:
+                continue
             x = x.to(device)
             y = y.to(device)
             pred_prob = final(x)

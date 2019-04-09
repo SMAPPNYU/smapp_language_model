@@ -18,14 +18,14 @@ from model import _detach
 class EncoderModel(torch.nn.Module):
     def  __init__(self, device, vectorizer, hidden_size, 
             embedding_size, bidirectional = False, batch_size = 50, 
-            num_layers=3, tie_weights=False):
+            num_layers=3, tie_weights=False, dropout_rate = 0.3):
         """
         Encoder Model to load saved trained LM and remove decoder from it. 
         Should Mirror the LM code, except the last LSTM output is fed to the 
         classifier layers. 
         """
         super(EncoderModel, self).__init__()
-        self.dropout = nn.Dropout(p = 0.3)
+        self.dropout = nn.Dropout(p = dropout_rate)
         self.num_directions = 1 if not bidirectional else 2
         self.tie_weights = tie_weights
         self.num_layers = num_layers
@@ -97,7 +97,7 @@ class ClassifierModel(torch.nn.Module):
     Uses the LSTM output sent from the Encoder Model and performs
     classification after linear transformation, activation and softmax. 
     """
-    def  __init__(self, lm_hidden_size, hidden_size, output_size):
+    def  __init__(self, lm_hidden_size, hidden_size, output_size, dropout_rate = 0.25):
         super(ClassifierModel, self).__init__()
         self.softmaxProb = nn.Softmax(dim=1)
         self.lm_hidden_size = lm_hidden_size
@@ -105,8 +105,8 @@ class ClassifierModel(torch.nn.Module):
         self.linear1 = nn.Linear(lm_hidden_size,hidden_size)
         #self.linear2 = nn.Linear(hidden_size,hidden_size)
         self.linear3 = nn.Linear(hidden_size,output_size)
-        self.input_dropout = nn.Dropout(p = 0.2)
-        self.hidden_dropout = nn.Dropout(p = 0.4)
+        self.input_dropout = nn.Dropout(p = dropout_rate)
+        self.hidden_dropout = nn.Dropout(p = dropout_rate)
     
     def forward(self, input_):
         """
